@@ -1,6 +1,6 @@
-# n-sktorrent-streamio-ad
+# SK Stream Bridge
 
-A clean-room, single-user Stremio stream addon for searching SKTorrent and exposing matching torrent streams to Stremio, with optional TorBox direct-link acceleration.
+A clean-room, single-user Stremio stream addon for searching SKTorrent and exposing matching torrent streams to Stremio, with optional TorBox direct-link acceleration. Version 2 introduces a completely independent visual identity and Slovak-first setup experience while retaining the full movie, series, metadata, encrypted profile, and TorBox workflow.
 
 ## Design goals
 

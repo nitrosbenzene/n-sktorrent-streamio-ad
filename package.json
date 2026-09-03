@@ -1,9 +1,9 @@
 {
   "name": "n-sktorrent-streamio-ad",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Personal Stremio stream addon for SKTorrent with optional TorBox acceleration.",
+  "description": "SK Stream Bridge for Stremio with encrypted profiles and optional TorBox acceleration.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

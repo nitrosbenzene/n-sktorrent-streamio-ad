@@ -15,8 +15,8 @@ function bool(name, fallback) {
 }
 
 export const env = Object.freeze({
-  addonName: process.env.ADDON_NAME || 'n-sktorrent-streamio-ad',
-  addonId: process.env.ADDON_ID || 'com.n.sktorrent.streamio.ad',
+  addonName: process.env.ADDON_NAME || 'SK Stream Bridge',
+  addonId: process.env.ADDON_ID || 'io.streambridge.sktorrent',
   port: int('PORT', 7000, 1, 65535),
   configSecret: process.env.CONFIG_SECRET || '',
   sktUid: process.env.SKT_UID || '',
