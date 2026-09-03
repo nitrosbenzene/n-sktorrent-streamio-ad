@@ -47,6 +47,16 @@ function tmdbRecord(data, type) {
   return type === 'series' ? data.tv_results?.[0] : data.movie_results?.[0];
 }
 
+function localizedRecordTitle(record, type) {
+  if (!record) return null;
+  return type === 'series' ? record.name : record.title;
+}
+
+function originalRecordTitle(record, type) {
+  if (!record) return null;
+  return type === 'series' ? record.original_name : record.original_title;
+}
+
 async function getTmdbAlternativeTitles(type, tmdbId) {
   const { tmdbKey } = getRuntimeConfig();
   if (!tmdbKey || !tmdbId) return [];
@@ -82,6 +92,10 @@ export async function resolveMetadata(type, imdbId) {
       getTmdbFind(imdbId, 'en-US')
     ]);
 
+    const csRecord = tmdbRecord(tmdbCs, type);
+    const skRecord = tmdbRecord(tmdbSk, type);
+    const enRecord = tmdbRecord(tmdbEn, type);
+
     const titles = new Set();
     addTitle(titles, cinemeta?.name);
     addTitle(titles, cinemeta?.originalName);
@@ -89,7 +103,7 @@ export async function resolveMetadata(type, imdbId) {
     addTitleCollection(titles, cinemeta?.aliases);
     addTitleCollection(titles, cinemeta?.alternativeTitles);
 
-    const records = [tmdbRecord(tmdbCs, type), tmdbRecord(tmdbSk, type), tmdbRecord(tmdbEn, type)].filter(Boolean);
+    const records = [csRecord, skRecord, enRecord].filter(Boolean);
     for (const record of records) {
       addTitle(titles, record.title);
       addTitle(titles, record.original_title);
@@ -105,11 +119,24 @@ export async function resolveMetadata(type, imdbId) {
     const date = first?.release_date || first?.first_air_date || cinemeta?.releaseInfo || '';
     const yearMatch = String(date).match(/\b(?:19|20)\d{2}\b/);
 
+    const primaryTitle = [...titles][0] || imdbId;
+    const titleCz = localizedRecordTitle(csRecord, type)
+      || localizedRecordTitle(skRecord, type)
+      || cinemeta?.name
+      || primaryTitle;
+    const titleOriginal = originalRecordTitle(enRecord, type)
+      || originalRecordTitle(csRecord, type)
+      || cinemeta?.originalName
+      || cinemeta?.original_title
+      || primaryTitle;
+
     return {
       imdbId,
       type,
       titles: [...titles],
-      primaryTitle: [...titles][0] || imdbId,
+      primaryTitle,
+      titleCz,
+      titleOriginal,
       year: yearMatch ? Number(yearMatch[0]) : null
     };
   });
