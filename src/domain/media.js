@@ -63,6 +63,11 @@ export function isVideoFile(path = '') {
   return VIDEO_EXTENSIONS.has(extension);
 }
 
+export function isWebReadyVideo(path = '') {
+  const filename = String(path).split(/[\\/]/).pop() || '';
+  return /\.mp4$/i.test(filename);
+}
+
 export function isJunkVideo(path = '') {
   return /(^|[\/ ._-])(sample|trailer|preview|bonus|extra|featurette)([\/ ._-]|$)/i.test(path);
 }
