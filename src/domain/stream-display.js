@@ -57,13 +57,14 @@ function qualityParts(candidate) {
   return uniqueText(parts);
 }
 
-export function formatStreamDisplay(candidate, { cached = false, type, season, episode } = {}) {
+export function formatStreamDisplay(candidate, { cached = false, downloading = false, type, season, episode } = {}) {
   const directTorBox = Boolean(cached && candidate.directUrl);
   const category = String(candidate.searchItem?.category || (type === 'series' ? 'TV' : 'FILM'))
     .trim()
     .toUpperCase();
 
-  const name = `${directTorBox ? '[TB ⚡]' : '[P2P]'} SKT\n${category || 'TORRENT'}`;
+  const prefix = directTorBox ? '[TB ⚡]' : downloading ? '[TB ⏳]' : '[TB]';
+  const name = `${prefix} SKT\n${category || 'TORRENT'}`;
   const lines = [displayTitle(candidate.meta)];
 
   if (type === 'series' && season != null && episode != null) {
