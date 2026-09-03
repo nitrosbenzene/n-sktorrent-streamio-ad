@@ -1,12 +1,21 @@
-import { env } from '../env.js';
+import crypto from 'node:crypto';
+import { env, getRuntimeConfig } from '../env.js';
 import { TtlCache } from '../lib/cache.js';
 import { fetchWithTimeout, mapPool } from '../lib/http.js';
 
 const API = 'https://api.torbox.app/v1/api/torrents';
-const listCache = new TtlCache({ ttlMs: 5_000, max: 2 });
+const listCache = new TtlCache({ ttlMs: 5_000, max: 20 });
+
+function torboxKey() {
+  return getRuntimeConfig().torboxKey || '';
+}
+
+function keyFingerprint(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 12);
+}
 
 function authHeaders(extra = {}) {
-  return { Authorization: `Bearer ${env.torboxKey}`, ...extra };
+  return { Authorization: `Bearer ${torboxKey()}`, ...extra };
 }
 
 function unwrap(payload) {
@@ -39,9 +48,10 @@ function cacheMapFromPayload(payload) {
 }
 
 export async function checkCached(hashes) {
+  const key = torboxKey();
   const unique = [...new Set(hashes.filter(Boolean).map((hash) => hash.toLowerCase()))];
   const result = new Map(unique.map((hash) => [hash, false]));
-  if (!env.torboxKey || !unique.length) return result;
+  if (!key || !unique.length) return result;
 
   for (let offset = 0; offset < unique.length; offset += 50) {
     const chunk = unique.slice(offset, offset + 50);
@@ -74,7 +84,8 @@ async function fetchTorrentList(id = null) {
 }
 
 async function listTorrents() {
-  return listCache.remember('all', () => fetchTorrentList(), 5_000);
+  const key = torboxKey();
+  return listCache.remember(`all:${keyFingerprint(key)}`, () => fetchTorrentList(), 5_000);
 }
 
 function torrentHash(item) {
@@ -99,7 +110,6 @@ async function findOrCreateTorrent(hash) {
   const id = await createTorrent(hash);
   if (id == null) throw new Error('TorBox did not return a torrent id');
 
-  // Cached torrents are normally available immediately, but mylist can lag briefly.
   for (let attempt = 0; attempt < 3; attempt++) {
     const list = await fetchTorrentList(id);
     const item = list.find((entry) => String(entry?.id) === String(id) || torrentHash(entry) === hash.toLowerCase());
@@ -121,13 +131,14 @@ function chooseTorBoxFile(files, wanted) {
 }
 
 export async function makeDirectLink(hash, wantedFile) {
-  if (!env.torboxKey) return null;
+  const key = torboxKey();
+  if (!key) return null;
   const torrent = await findOrCreateTorrent(hash);
   const file = chooseTorBoxFile(torrent.files, wantedFile);
   if (!file) return null;
 
   const url = new URL(`${API}/requestdl`);
-  url.searchParams.set('token', env.torboxKey);
+  url.searchParams.set('token', key);
   url.searchParams.set('torrent_id', String(torrent.id));
   url.searchParams.set('file_id', String(file.id));
   const payload = await json(await fetchWithTimeout(url, { headers: authHeaders() }, 10_000));
@@ -136,7 +147,7 @@ export async function makeDirectLink(hash, wantedFile) {
 }
 
 export async function attachDirectLinks(candidates, cacheMap) {
-  if (!env.torboxKey || !env.torboxDirectLinks || env.torboxMaxDirectLinks <= 0) return candidates;
+  if (!torboxKey() || !env.torboxDirectLinks || env.torboxMaxDirectLinks <= 0) return candidates;
   const eligible = candidates.filter((item) => cacheMap.get(item.infoHash)).slice(0, env.torboxMaxDirectLinks);
   const results = await mapPool(eligible, 2, async (item) => ({ item, url: await makeDirectLink(item.infoHash, item.file) }));
   const urls = new Map();
