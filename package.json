@@ -1,0 +1,22 @@
+{
+  "name": "n-sktorrent-streamio-ad",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal Stremio stream addon for SKTorrent with optional TorBox acceleration.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "check": "node --check server.js && node --check src/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1",
+    "parse-torrent": "^11.0.24"
+  }
+}
