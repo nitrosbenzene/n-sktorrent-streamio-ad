@@ -5,6 +5,7 @@ import { fetchWithTimeout, mapPool } from '../lib/http.js';
 
 const API = 'https://api.torbox.app/v1/api/torrents';
 const listCache = new TtlCache({ ttlMs: 5_000, max: 20 });
+const startCache = new TtlCache({ ttlMs: 10_000, max: 200 });
 
 function torboxKey() {
   return getRuntimeConfig().torboxKey || '';
@@ -159,6 +160,7 @@ async function createTorrent(hash) {
   const body = new FormData();
   body.append('magnet', `magnet:?xt=urn:btih:${hash}`);
   body.append('seed', '1');
+  body.append('allow_zip', 'false');
   const payload = await json(await fetchWithTimeout(`${API}/createtorrent`, {
     method: 'POST', headers: authHeaders(), body
   }, 12_000));
@@ -166,8 +168,25 @@ async function createTorrent(hash) {
   return data?.torrent_id ?? data?.id ?? data;
 }
 
-async function findOrCreateTorrent(hash) {
-  const existing = (await listTorrents()).find((item) => torrentHash(item) === hash.toLowerCase());
+async function controlTorrent(id, operation) {
+  return json(await fetchWithTimeout(`${API}/controltorrent`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ torrent_id: id, operation, all: false })
+  }, 10_000));
+}
+
+async function resumeIfPaused(item) {
+  const state = String(item?.download_state || item?.status || '').trim().toLowerCase();
+  if (state !== 'paused' || item?.id == null) return item;
+
+  await controlTorrent(item.id, 'resume');
+  return { ...item, active: true, download_finished: false, download_state: 'queued' };
+}
+
+async function findOrCreateTorrent(hash, { fresh = false } = {}) {
+  const source = fresh ? await fetchTorrentList() : await listTorrents();
+  const existing = source.find((item) => torrentHash(item) === hash.toLowerCase());
   if (existing) return existing;
 
   const id = await createTorrent(hash);
@@ -184,9 +203,15 @@ async function findOrCreateTorrent(hash) {
 
 export async function startTorrentDownload(hash) {
   const normalized = String(hash || '').trim().toLowerCase();
-  if (!torboxKey()) throw new Error('TorBox API key is not configured');
+  const key = torboxKey();
+  if (!key) throw new Error('TorBox API key is not configured');
   if (!/^[a-f0-9]{40,64}$/.test(normalized)) throw new Error('Invalid torrent hash');
-  return findOrCreateTorrent(normalized);
+
+  const cacheKey = `start:${keyFingerprint(key)}:${normalized}`;
+  return startCache.remember(cacheKey, async () => {
+    const torrent = await findOrCreateTorrent(normalized, { fresh: true });
+    return resumeIfPaused(torrent);
+  }, 10_000);
 }
 
 function chooseTorBoxFile(files, wanted) {
