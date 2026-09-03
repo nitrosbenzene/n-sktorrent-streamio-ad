@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import parseTorrent from 'parse-torrent';
-import { env, skTorrentConfigured } from '../env.js';
+import { env, getRuntimeConfig, skTorrentConfigured } from '../env.js';
 import { TtlCache } from '../lib/cache.js';
 import { fetchWithTimeout, mapPool } from '../lib/http.js';
 
@@ -9,10 +9,11 @@ const SEARCH_URL = `${BASE_URL}/torrent/torrents_v2.php`;
 const cache = new TtlCache({ ttlMs: env.cacheTtlMs, max: 600 });
 
 function headers() {
+  const config = getRuntimeConfig();
   return {
     'user-agent': 'Mozilla/5.0 (compatible; n-sktorrent-streamio-ad/1.0)',
     'accept-language': 'sk,cs;q=0.9,en;q=0.6',
-    cookie: `uid=${env.sktUid}; pass=${env.sktPass}`,
+    cookie: `uid=${config.sktUid}; pass=${config.sktPass}`,
     referer: BASE_URL
   };
 }
@@ -80,8 +81,9 @@ async function fetchSearchPage(query, page) {
 }
 
 export async function searchSkTorrent(query, pages) {
-  if (!skTorrentConfigured()) throw new Error('SKTorrent credentials are not configured');
-  const key = `search:${query}:${pages}`;
+  const config = getRuntimeConfig();
+  if (!skTorrentConfigured(config)) throw new Error('SKTorrent credentials are not configured');
+  const key = `search:${config.sktUid}:${query}:${pages}`;
   return cache.remember(key, async () => {
     const pageNumbers = Array.from({ length: pages }, (_, index) => index);
     const pageResults = await mapPool(pageNumbers, 3, (page) => fetchSearchPage(query, page));
@@ -111,7 +113,8 @@ function normalizeTorrentFiles(parsed) {
 }
 
 export async function loadTorrentDescriptor(id) {
-  if (!skTorrentConfigured()) throw new Error('SKTorrent credentials are not configured');
+  const config = getRuntimeConfig();
+  if (!skTorrentConfigured(config)) throw new Error('SKTorrent credentials are not configured');
   return cache.remember(`torrent:${id}`, async () => {
     const url = `${BASE_URL}/torrent/download.php?id=${encodeURIComponent(id)}`;
     const response = await fetchWithTimeout(url, { headers: headers(), redirect: 'follow' }, 12_000);
