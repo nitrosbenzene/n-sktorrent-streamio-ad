@@ -140,6 +140,12 @@ function compareCandidates(a, b, cacheMap) {
   return Number(b.searchItem?.seeds || 0) - Number(a.searchItem?.seeds || 0);
 }
 
+function torboxStartUrl(candidate, baseUrl) {
+  const base = String(baseUrl || '').replace(/\/+$/, '');
+  if (!base) return null;
+  return `${base}/torbox/start/${encodeURIComponent(candidate.infoHash)}/video.mp4`;
+}
+
 function stremioStream(candidate, cached, downloading, context) {
   const { name, title } = formatStreamDisplay(candidate, {
     cached: Boolean(cached),
@@ -166,6 +172,20 @@ function stremioStream(candidate, cached, downloading, context) {
     };
   }
 
+  const startUrl = !cached ? torboxStartUrl(candidate, context.torboxStartBaseUrl) : null;
+  if (startUrl) {
+    return {
+      name,
+      title,
+      url: startUrl,
+      behaviorHints: {
+        bingeGroup: `n-skt-${candidate.quality.toLowerCase().replace(/\W+/g, '-')}`,
+        notWebReady: false,
+        filename: 'torbox-downloading.mp4'
+      }
+    };
+  }
+
   return {
     name,
     title,
@@ -177,7 +197,7 @@ function stremioStream(candidate, cached, downloading, context) {
   };
 }
 
-export async function buildStreams({ type, imdbId, season, episode }) {
+export async function buildStreams({ type, imdbId, season, episode, torboxStartBaseUrl = '' }) {
   const meta = await resolveMetadata(type, imdbId);
   if (!meta.titles.length) return [];
 
@@ -210,6 +230,6 @@ export async function buildStreams({ type, imdbId, season, episode }) {
     candidate,
     cacheMap.get(candidate.infoHash),
     downloadingMap.get(candidate.infoHash),
-    { type, season, episode }
+    { type, season, episode, torboxStartBaseUrl }
   ));
 }

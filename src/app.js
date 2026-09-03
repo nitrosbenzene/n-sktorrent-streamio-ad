@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import { env, getRuntimeConfig, skTorrentConfigured, withRuntimeConfig } from './env.js';
 import { configEncryptionReady, decryptConfig, encryptConfig } from './config-token.js';
 import { parseStremioId } from './domain/media.js';
 import { buildStreams } from './services/streams.js';
+import { startTorrentDownload } from './services/torbox.js';
+
+const torboxDownloadingVideo = readFileSync(new URL('./assets/torbox-downloading.mp4', import.meta.url));
 
 export const app = express();
 app.disable('x-powered-by');
@@ -17,7 +21,7 @@ app.use((req, res, next) => {
 
 const manifestCore = Object.freeze({
   id: env.addonId,
-  version: '1.2.1',
+  version: '1.2.2',
   name: env.addonName,
   description: 'Personal SKTorrent stream addon with Czech/Slovak metadata matching and optional TorBox acceleration.',
   resources: ['stream'],
@@ -60,6 +64,16 @@ function publicOrigin(req) {
   let protocol = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
   if (/\.vercel\.app(?::\d+)?$/i.test(host)) protocol = 'https';
   return `${protocol}://${host}`;
+}
+
+function torboxStartBaseUrl(req) {
+  const config = getRuntimeConfig();
+  if (!config.torboxKey || !env.torboxDirectLinks) return '';
+
+  const origin = publicOrigin(req);
+  return req.params.token
+    ? `${origin}/c/${encodeURIComponent(req.params.token)}`
+    : origin;
 }
 
 function stremioUrl(manifestUrl) {
@@ -138,6 +152,43 @@ ${manifestUrl ? `<div class="card"><h2 style="margin-top:0">Your Stremio manifes
 </body></html>`;
 }
 
+function sendVideoBuffer(req, res, buffer) {
+  const total = buffer.length;
+  const range = String(req.headers.range || '').trim();
+
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'no-store');
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match) {
+    res.setHeader('Content-Length', String(total));
+    return res.status(200).end(buffer);
+  }
+
+  let start;
+  let end;
+  if (!match[1] && match[2]) {
+    const suffixLength = Number(match[2]);
+    start = Math.max(total - suffixLength, 0);
+    end = total - 1;
+  } else {
+    start = match[1] ? Number(match[1]) : 0;
+    end = match[2] ? Number(match[2]) : total - 1;
+  }
+
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= total || end < start) {
+    res.setHeader('Content-Range', `bytes */${total}`);
+    return res.status(416).end();
+  }
+
+  end = Math.min(end, total - 1);
+  res.status(206);
+  res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+  res.setHeader('Content-Length', String(end - start + 1));
+  return res.end(buffer.subarray(start, end + 1));
+}
+
 app.get('/health', (_req, res) => {
   const config = getRuntimeConfig();
   res.json({
@@ -173,12 +224,32 @@ async function handleStream(req, res) {
 
   const started = Date.now();
   try {
-    const streams = await buildStreams({ type, ...parsed });
+    const streams = await buildStreams({
+      type,
+      ...parsed,
+      torboxStartBaseUrl: torboxStartBaseUrl(req)
+    });
     console.log(`[stream] ${type} ${req.params.id} -> ${streams.length} streams in ${Date.now() - started}ms`);
     return res.json({ streams });
   } catch (error) {
     console.error(`[stream] ${type} ${req.params.id} failed:`, error);
     return res.status(200).json({ streams: [], error: error.message });
+  }
+}
+
+async function handleTorboxStart(req, res) {
+  const hash = String(req.params.hash || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{40,64}$/.test(hash)) return res.status(400).json({ error: 'Invalid torrent hash' });
+  if (!getRuntimeConfig().torboxKey) return res.status(503).json({ error: 'TorBox API key is not configured for this addon URL.' });
+
+  try {
+    const torrent = await startTorrentDownload(hash);
+    const state = String(torrent?.download_state || torrent?.status || '').trim() || 'started';
+    console.log(`[torbox] selected ${hash} -> torrent=${torrent?.id ?? 'unknown'} state=${state}`);
+    return sendVideoBuffer(req, res, torboxDownloadingVideo);
+  } catch (error) {
+    console.error(`[torbox] failed to start ${hash}:`, error);
+    return res.status(502).json({ error: 'Could not start the TorBox download.' });
   }
 }
 
@@ -191,6 +262,17 @@ app.get('/c/:token/stream/:type/:id.json', async (req, res) => {
     return res.status(400).json({ streams: [], error: 'Invalid addon configuration' });
   }
   return withRuntimeConfig(config, () => handleStream(req, res));
+});
+
+app.get('/torbox/start/:hash/video.mp4', handleTorboxStart);
+app.get('/c/:token/torbox/start/:hash/video.mp4', async (req, res) => {
+  let config;
+  try {
+    config = decryptConfig(req.params.token);
+  } catch {
+    return res.status(400).json({ error: 'Invalid addon configuration' });
+  }
+  return withRuntimeConfig(config, () => handleTorboxStart(req, res));
 });
 
 app.get(['/', '/configure'], (req, res) => {

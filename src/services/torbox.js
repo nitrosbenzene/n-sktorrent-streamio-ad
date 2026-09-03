@@ -179,7 +179,14 @@ async function findOrCreateTorrent(hash) {
     if (item?.files?.length) return item;
     await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
   }
-  return { id, files: [] };
+  return { id, hash, download_finished: false, files: [] };
+}
+
+export async function startTorrentDownload(hash) {
+  const normalized = String(hash || '').trim().toLowerCase();
+  if (!torboxKey()) throw new Error('TorBox API key is not configured');
+  if (!/^[a-f0-9]{40,64}$/.test(normalized)) throw new Error('Invalid torrent hash');
+  return findOrCreateTorrent(normalized);
 }
 
 function chooseTorBoxFile(files, wanted) {
