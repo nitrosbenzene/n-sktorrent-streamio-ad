@@ -60,6 +60,34 @@ function candidateFromTorrent(searchItem, torrent, file, meta) {
   };
 }
 
+function qualityRank(quality) {
+  switch (quality) {
+    case '4K': return 4;
+    case '1080p': return 3;
+    case '720p': return 2;
+    case 'SD': return 1;
+    default: return 0;
+  }
+}
+
+function compareCandidates(a, b, cacheMap) {
+  // Strict priority order:
+  // 1) TorBox cached
+  // 2) video quality
+  // 3) selected video file size
+  // 4) seed count as a final tiebreaker
+  const cachedDiff = Number(Boolean(cacheMap.get(b.infoHash))) - Number(Boolean(cacheMap.get(a.infoHash)));
+  if (cachedDiff) return cachedDiff;
+
+  const qualityDiff = qualityRank(b.quality) - qualityRank(a.quality);
+  if (qualityDiff) return qualityDiff;
+
+  const sizeDiff = Number(b.file?.length || 0) - Number(a.file?.length || 0);
+  if (sizeDiff) return sizeDiff;
+
+  return Number(b.searchItem?.seeds || 0) - Number(a.searchItem?.seeds || 0);
+}
+
 function stremioStream(candidate, cached) {
   const tags = [candidate.quality, ...candidate.traits.flags, ...candidate.traits.languages].filter(Boolean);
   const fileSize = formatBytes(candidate.file.length);
@@ -117,7 +145,7 @@ export async function buildStreams({ type, imdbId, season, episode }) {
   });
 
   const cacheMap = await checkCached(candidates.map((item) => item.infoHash));
-  candidates.sort((a, b) => Number(cacheMap.get(b.infoHash)) - Number(cacheMap.get(a.infoHash)) || Number(b.searchItem.seeds) - Number(a.searchItem.seeds));
+  candidates.sort((a, b) => compareCandidates(a, b, cacheMap));
   candidates = await attachDirectLinks(candidates, cacheMap);
 
   return candidates.map((candidate) => stremioStream(candidate, cacheMap.get(candidate.infoHash)));
