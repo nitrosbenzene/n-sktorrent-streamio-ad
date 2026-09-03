@@ -3,14 +3,13 @@ import { mapPool } from '../lib/http.js';
 import {
   chooseVideoFile,
   extractReleaseTraits,
-  isWebReadyVideo,
   normalize,
   releaseMatchesTitle
 } from '../domain/media.js';
 import { formatStreamDisplay } from '../domain/stream-display.js';
 import { resolveMetadata } from './metadata.js';
 import { loadTorrentDescriptor, searchSkTorrent } from './sktorrent.js';
-import { attachDirectLinks, checkCached, checkDownloading } from './torbox.js';
+import { checkCached, checkDownloading } from './torbox.js';
 
 function makeQueries(meta, type, season) {
   const queries = new Set();
@@ -80,10 +79,6 @@ async function searchAll(meta, type, season) {
   let matched = matchingSearchResults(dedupe, meta);
   let olderFirstUsed = false;
 
-  // Reused movie titles can bury the wanted release behind many newer torrents.
-  // Example: Ballerina (2016 / Leap!) is now hidden behind Ballerina (2025).
-  // If the normal newest-first scan yields no year-matching result, scan a few
-  // strong aliases from the oldest end of SKTorrent's search results as well.
   if (type === 'movie' && meta.year && matched.length === 0) {
     const olderQueries = makeOlderFirstQueries(meta);
     if (olderQueries.length) {
@@ -140,10 +135,22 @@ function compareCandidates(a, b, cacheMap) {
   return Number(b.searchItem?.seeds || 0) - Number(a.searchItem?.seeds || 0);
 }
 
-function torboxStartUrl(candidate, baseUrl) {
-  const base = String(baseUrl || '').replace(/\/+$/, '');
+function basename(path = '') {
+  return String(path).split(/[\\/]/).pop() || 'video.mkv';
+}
+
+function torboxProxyUrl(candidate, cached, context) {
+  const base = String(context.torboxStartBaseUrl || '').replace(/\/+$/, '');
   if (!base) return null;
-  return `${base}/torbox/start/${encodeURIComponent(candidate.infoHash)}/video.mp4`;
+
+  if (!cached) {
+    return `${base}/download/${encodeURIComponent(candidate.infoHash)}/${encodeURIComponent(candidate.searchItem.id)}`;
+  }
+
+  const season = context.season || 0;
+  const episode = context.episode || 0;
+  const safeName = basename(candidate.file?.path || candidate.file?.name).replaceAll('/', '|');
+  return `${base}/play/${encodeURIComponent(candidate.infoHash)}/${season}/${episode}/${encodeURIComponent(safeName)}`;
 }
 
 function stremioStream(candidate, cached, downloading, context) {
@@ -155,33 +162,14 @@ function stremioStream(candidate, cached, downloading, context) {
     episode: context.episode
   });
 
-  if (candidate.directUrl) {
-    const filename = String(candidate.file?.path || candidate.file?.name || '').split(/[\\/]/).pop() || undefined;
-    const videoSize = Number(candidate.file?.length || 0);
-
+  const proxyUrl = torboxProxyUrl(candidate, cached, context);
+  if (proxyUrl) {
     return {
       name,
       title,
-      url: candidate.directUrl,
+      url: proxyUrl,
       behaviorHints: {
-        bingeGroup: `n-skt-${candidate.quality.toLowerCase().replace(/\W+/g, '-')}`,
-        notWebReady: !isWebReadyVideo(filename),
-        ...(filename ? { filename } : {}),
-        ...(Number.isFinite(videoSize) && videoSize > 0 ? { videoSize } : {})
-      }
-    };
-  }
-
-  const startUrl = !cached ? torboxStartUrl(candidate, context.torboxStartBaseUrl) : null;
-  if (startUrl) {
-    return {
-      name,
-      title,
-      url: startUrl,
-      behaviorHints: {
-        bingeGroup: `n-skt-${candidate.quality.toLowerCase().replace(/\W+/g, '-')}`,
-        notWebReady: false,
-        filename: 'torbox-downloading.mp4'
+        bingeGroup: `n-skt-${candidate.quality.toLowerCase().replace(/\W+/g, '-')}`
       }
     };
   }
@@ -224,7 +212,6 @@ export async function buildStreams({ type, imdbId, season, episode, torboxStartB
     checkDownloading(hashes)
   ]);
   candidates.sort((a, b) => compareCandidates(a, b, cacheMap));
-  candidates = await attachDirectLinks(candidates, cacheMap);
 
   return candidates.map((candidate) => stremioStream(
     candidate,

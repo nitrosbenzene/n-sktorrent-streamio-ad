@@ -50,14 +50,14 @@ test('formats cached movie results like the reference SKTorrent addon', () => {
   ].join('\n'));
 });
 
-test('labels uncached results not downloading through TorBox as TB', () => {
+test('labels uncached results like the reference addon', () => {
   const result = formatStreamDisplay(candidate({ directUrl: null }), {
     cached: false,
     downloading: false,
     type: 'movie'
   });
 
-  assert.equal(result.name, '[TB] SKT\nFILMY CZ/SK');
+  assert.equal(result.name, '[TB ⏳] SKT\nFILMY CZ/SK');
 });
 
 test('labels active TorBox downloads with hourglass and includes episode information', () => {

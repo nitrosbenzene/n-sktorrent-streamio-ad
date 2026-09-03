@@ -1,10 +1,11 @@
-import { app } from './src/app.js';
+import http from 'node:http';
+import handler from './src/handler.js';
 import { env } from './src/env.js';
 
 if (!process.env.VERCEL) {
-  app.listen(env.port, () => {
+  http.createServer(handler).listen(env.port, () => {
     console.log(`[startup] ${env.addonName} listening on http://localhost:${env.port}`);
   });
 }
 
-export default app;
+export default handler;
