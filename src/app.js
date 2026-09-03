@@ -15,14 +15,32 @@ app.use((req, res, next) => {
   next();
 });
 
-const manifest = Object.freeze({
+const manifestCore = Object.freeze({
   id: env.addonId,
-  version: '1.1.0',
+  version: '1.2.0',
   name: env.addonName,
   description: 'Personal SKTorrent stream addon with Czech/Slovak metadata matching and optional TorBox acceleration.',
   resources: ['stream'],
   types: ['movie', 'series'],
   idPrefixes: ['tt']
+});
+
+const unconfiguredManifest = Object.freeze({
+  ...manifestCore,
+  behaviorHints: {
+    configurable: true,
+    configurationRequired: true,
+    p2p: true
+  }
+});
+
+const configuredManifest = Object.freeze({
+  ...manifestCore,
+  behaviorHints: {
+    configurable: true,
+    configurationRequired: false,
+    p2p: true
+  }
 });
 
 function publicOrigin(req) {
@@ -54,7 +72,7 @@ function validateFormConfig(config) {
   return null;
 }
 
-function renderPage(req, { error = '', manifestUrl = '' } = {}) {
+function renderPage(req, { error = '', manifestUrl = '', editing = false } = {}) {
   const encryptionReady = configEncryptionReady();
   const installUrl = manifestUrl ? stremioUrl(manifestUrl) : '';
   const envConfig = getRuntimeConfig();
@@ -66,7 +84,7 @@ function renderPage(req, { error = '', manifestUrl = '' } = {}) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(env.addonName)}</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;max-width:820px;margin:0 auto;padding:42px 20px 70px;line-height:1.5;background:#101010;color:#f3f3f3}h1{font-size:32px;margin:0 0 10px}.muted{color:#b9b9b9}.card{border:1px solid #343434;border-radius:16px;padding:24px;margin:22px 0;background:#181818}label{display:block;font-weight:700;margin:16px 0 7px}input{width:100%;font:inherit;color:#fff;background:#101010;border:1px solid #444;border-radius:9px;padding:12px 13px;outline:none}input:focus{border-color:#8fbfff;box-shadow:0 0 0 3px rgba(143,191,255,.12)}button,.button{display:inline-block;font:inherit;font-weight:700;padding:11px 16px;border:0;border-radius:9px;cursor:pointer;background:#f2f2f2;color:#111;text-decoration:none}.secondary{background:#292929;color:#eee;border:1px solid #464646}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.ok{color:#7be39b}.bad{color:#ff9b9b}.notice{border-radius:10px;padding:12px 14px;margin:14px 0}.notice.bad{background:#321a1a;border:1px solid #653030}.notice.ok{background:#17301f;border:1px solid #2d6540}code{word-break:break-all;background:#252525;padding:3px 6px;border-radius:5px}small{display:block;color:#aaa;margin-top:6px}a{color:#9ecbff}.secret-note{font-size:14px;color:#aaa;margin-top:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:650px){.grid{grid-template-columns:1fr}body{padding-top:28px}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;max-width:820px;margin:0 auto;padding:42px 20px 70px;line-height:1.5;background:#101010;color:#f3f3f3}h1{font-size:32px;margin:0 0 10px}.muted{color:#b9b9b9}.card{border:1px solid #343434;border-radius:16px;padding:24px;margin:22px 0;background:#181818}label{display:block;font-weight:700;margin:16px 0 7px}input{width:100%;font:inherit;color:#fff;background:#101010;border:1px solid #444;border-radius:9px;padding:12px 13px;outline:none}input:focus{border-color:#8fbfff;box-shadow:0 0 0 3px rgba(143,191,255,.12)}button,.button{display:inline-block;font:inherit;font-weight:700;padding:11px 16px;border:0;border-radius:9px;cursor:pointer;background:#f2f2f2;color:#111;text-decoration:none}.secondary{background:#292929;color:#eee;border:1px solid #464646}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.ok{color:#7be39b}.bad{color:#ff9b9b}.notice{border-radius:10px;padding:12px 14px;margin:14px 0}.notice.bad{background:#321a1a;border:1px solid #653030}.notice.ok{background:#17301f;border:1px solid #2d6540}.notice.info{background:#17283a;border:1px solid #31577a;color:#cfe6ff}code{word-break:break-all;background:#252525;padding:3px 6px;border-radius:5px}small{display:block;color:#aaa;margin-top:6px}a{color:#9ecbff}.secret-note{font-size:14px;color:#aaa;margin-top:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:650px){.grid{grid-template-columns:1fr}body{padding-top:28px}}
 </style>
 </head>
 <body>
@@ -74,6 +92,7 @@ function renderPage(req, { error = '', manifestUrl = '' } = {}) {
 <p class="muted">Configure your private SKTorrent Stremio addon here. The generated Stremio URL contains an encrypted configuration token, not your plaintext credentials.</p>
 
 ${!encryptionReady ? `<div class="notice bad"><strong>One-time setup required:</strong> add a Vercel environment variable named <code>CONFIG_SECRET</code> with a random value of at least 24 characters, then redeploy. The form will work after that.</div>` : ''}
+${editing ? `<div class="notice info"><strong>Reconfigure addon:</strong> enter the desired values below and install the newly generated configuration in Stremio. Existing secrets are intentionally not displayed back in the browser.</div>` : ''}
 ${error ? `<div class="notice bad">${escapeHtml(error)}</div>` : ''}
 ${manifestUrl ? `<div class="notice ok"><strong>Configuration created.</strong> You can now install this private manifest in Stremio.</div>` : ''}
 
@@ -96,7 +115,7 @@ ${manifestUrl ? `<div class="notice ok"><strong>Configuration created.</strong> 
 <input id="torboxKey" name="torboxKey" type="password" placeholder="TorBox API key">
 <label for="tmdbKey">TMDB API key <span class="muted">(optional)</span></label>
 <input id="tmdbKey" name="tmdbKey" type="password" placeholder="TMDB API key">
-<div class="row"><button type="submit" ${encryptionReady ? '' : 'disabled'}>Create Stremio configuration</button></div>
+<div class="row"><button type="submit" ${encryptionReady ? '' : 'disabled'}>${editing ? 'Create updated configuration' : 'Create Stremio configuration'}</button></div>
 </form>
 <p class="secret-note">The server encrypts these values with AES-256-GCM using your deployment's <code>CONFIG_SECRET</code>. Keep both the generated manifest URL and your CONFIG_SECRET private.</p>
 </div>
@@ -112,6 +131,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     addon: env.addonName,
+    version: manifestCore.version,
     configurationUiReady: configEncryptionReady(),
     environmentFallbackConfigured: skTorrentConfigured(config),
     torboxEnvironmentFallback: Boolean(config.torboxKey),
@@ -119,12 +139,12 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.get('/manifest.json', (_req, res) => res.json(manifest));
+app.get('/manifest.json', (_req, res) => res.json(unconfiguredManifest));
 app.get('/c/:token/manifest.json', (req, res) => {
   try {
     const config = decryptConfig(req.params.token);
     if (!skTorrentConfigured(config)) return res.status(400).json({ error: 'Invalid addon configuration' });
-    return res.json(manifest);
+    return res.json(configuredManifest);
   } catch {
     return res.status(400).json({ error: 'Invalid addon configuration' });
   }
@@ -163,6 +183,16 @@ app.get('/c/:token/stream/:type/:id.json', async (req, res) => {
 
 app.get(['/', '/configure'], (req, res) => {
   res.type('html').send(renderPage(req));
+});
+
+app.get('/c/:token/configure', (req, res) => {
+  try {
+    const config = decryptConfig(req.params.token);
+    if (!skTorrentConfigured(config)) throw new Error('Invalid configuration');
+    return res.type('html').send(renderPage(req, { editing: true }));
+  } catch {
+    return res.status(400).type('html').send(renderPage(req, { error: 'This installed addon configuration is invalid or can no longer be decrypted.' }));
+  }
 });
 
 app.post('/configure', (req, res) => {
