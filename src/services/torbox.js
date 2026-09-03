@@ -112,6 +112,49 @@ function torrentHash(item) {
   return String(item?.hash || item?.info_hash || '').toLowerCase();
 }
 
+export function isTorBoxDownloading(item) {
+  if (!item || item.download_finished === true) return false;
+
+  const state = String(item.download_state || item.status || '').trim().toLowerCase();
+  const inactiveStates = new Set([
+    'paused',
+    'failed',
+    'failed (processing)',
+    'expired',
+    'incomplete'
+  ]);
+  if (inactiveStates.has(state)) return false;
+
+  const downloadingStates = new Set([
+    'downloading',
+    'stalled (no seeds)',
+    'metadl',
+    'checkingresumedata',
+    'queued'
+  ]);
+  if (downloadingStates.has(state)) return true;
+
+  return item.active === true;
+}
+
+export async function checkDownloading(hashes) {
+  const key = torboxKey();
+  const unique = [...new Set(hashes.filter(Boolean).map((hash) => hash.toLowerCase()))];
+  const result = new Map(unique.map((hash) => [hash, false]));
+  if (!key || !unique.length) return result;
+
+  try {
+    for (const item of await listTorrents()) {
+      const hash = torrentHash(item);
+      if (result.has(hash) && isTorBoxDownloading(item)) result.set(hash, true);
+    }
+  } catch (error) {
+    console.warn('[torbox] torrent state check failed:', error.message);
+  }
+
+  return result;
+}
+
 async function createTorrent(hash) {
   const body = new FormData();
   body.append('magnet', `magnet:?xt=urn:btih:${hash}`);
