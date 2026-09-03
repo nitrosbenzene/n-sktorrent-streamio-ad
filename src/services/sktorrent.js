@@ -54,11 +54,14 @@ function parseSearchHtml(html) {
     const name = (anchor.attr('title') || image.attr('alt') || anchor.text() || '').replace(/\s+/g, ' ').trim();
     if (!name) return;
 
+    const category = cell.find('b').first().text().replace(/\s+/g, ' ').trim();
+
     results.push({
       id,
       name,
       sizeLabel: parseSize(context),
       seeds: parseSeeds(context),
+      category,
       detailUrl: new URL(href, `${BASE_URL}/torrent/`).toString()
     });
   });
