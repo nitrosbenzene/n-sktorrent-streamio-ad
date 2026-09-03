@@ -8,7 +8,10 @@ export function normalize(value = '') {
   return stripDiacritics(value)
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/[._\-()[\]{}:;,!?+]+/g, ' ')
+    // Treat every punctuation/symbol separator the same way. This includes
+    // Unicode punctuation such as the middle dot in "WALL·E", typographic
+    // dashes, smart quotes, slashes and other release-name separators.
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -21,6 +24,21 @@ export function tokenizeTitle(value = '') {
 }
 
 export function titleSimilarity(releaseName, candidate) {
+  const releaseNormalized = normalize(releaseName);
+  const targetNormalized = normalize(candidate);
+  if (!targetNormalized) return 0;
+
+  // Prefer an exact normalized phrase match when the release contains the
+  // title verbatim. This is especially useful for stylized titles such as
+  // WALL·E / WALL-E / WALL E before falling back to token similarity.
+  if (
+    releaseNormalized === targetNormalized ||
+    releaseNormalized.startsWith(`${targetNormalized} `) ||
+    releaseNormalized.includes(` ${targetNormalized} `)
+  ) {
+    return 1;
+  }
+
   const release = new Set(tokenizeTitle(releaseName));
   const target = new Set(tokenizeTitle(candidate));
   if (!target.size) return 0;
