@@ -86,3 +86,5 @@ app.use((error, _req, res, _next) => {
   if (res.headersSent) return;
   res.status(500).json({ error: 'Internal server error' });
 });
+
+export default app;
