@@ -4,6 +4,7 @@ import {
   chooseVideoFile,
   extractReleaseTraits,
   formatBytes,
+  normalize,
   releaseMatchesTitle
 } from '../domain/media.js';
 import { resolveMetadata } from './metadata.js';
@@ -12,15 +13,32 @@ import { attachDirectLinks, checkCached } from './torbox.js';
 
 function makeQueries(meta, type, season) {
   const queries = new Set();
-  for (const title of meta.titles.slice(0, 4)) {
-    queries.add(title);
-    if (type === 'movie' && meta.year) queries.add(`${title} ${meta.year}`);
+  const titles = meta.titles.slice(0, 6);
+
+  for (const title of titles) {
+    const raw = String(title || '').trim();
+    const normalized = normalize(raw);
+    if (!raw || !normalized) continue;
+
+    // Search both the displayed/original spelling and an accent/punctuation-free
+    // spelling. Examples: WALL·E -> "wall e", Balerína -> "balerina".
+    queries.add(raw);
+    if (normalized !== raw.toLowerCase()) queries.add(normalized);
+
+    if (type === 'movie' && meta.year) {
+      // A year-qualified query is most useful for short/generic titles. Keep it
+      // bounded so we do not multiply SKTorrent page requests unnecessarily.
+      const tokenCount = normalized.split(' ').length;
+      if (normalized.length <= 12 || tokenCount <= 2) queries.add(`${normalized} ${meta.year}`);
+    }
+
     if (type === 'series' && season != null) {
-      queries.add(`${title} S${String(season).padStart(2, '0')}`);
-      queries.add(`${title} ${season}. serie`);
+      queries.add(`${normalized} S${String(season).padStart(2, '0')}`);
+      queries.add(`${normalized} ${season}. serie`);
     }
   }
-  return [...queries].slice(0, type === 'movie' ? 6 : 8);
+
+  return [...queries].slice(0, type === 'movie' ? 8 : 10);
 }
 
 function scoreSearchResult(item, meta) {
@@ -40,10 +58,14 @@ async function searchAll(meta, type, season) {
       if (!old || scoreSearchResult(item, meta) > scoreSearchResult(old, meta)) dedupe.set(item.id, item);
     }
   }
-  return [...dedupe.values()]
+
+  const matched = [...dedupe.values()]
     .filter((item) => releaseMatchesTitle(item.name, meta.titles, meta.year))
     .sort((a, b) => scoreSearchResult(b, meta) - scoreSearchResult(a, meta))
     .slice(0, env.maxTorrentsToInspect);
+
+  console.log(`[search] ${type} ${meta.imdbId} aliases=${meta.titles.length} queries=${queries.length} found=${dedupe.size} matched=${matched.length}`);
+  return matched;
 }
 
 function candidateFromTorrent(searchItem, torrent, file, meta) {
@@ -91,8 +113,6 @@ function stremioStream(candidate, cached) {
   const sourceLabel = isCached ? '⚡ TORBOX CACHED' : 'P2P';
   const qualityLabel = tags.join(' · ') || 'Torrent';
 
-  // Put the cache marker in both `name` and `title`. Different Stremio clients
-  // render/truncate these fields differently, so this keeps TorBox status visible.
   const name = isCached
     ? `⚡ TORBOX · ${qualityLabel}`
     : `N-SKT · ${qualityLabel} · P2P`;
