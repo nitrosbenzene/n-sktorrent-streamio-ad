@@ -36,14 +36,29 @@ function cacheMapFromPayload(payload) {
 
   if (Array.isArray(data)) {
     for (const entry of data) {
-      if (typeof entry === 'string') map.set(entry.toLowerCase(), true);
-      else if (entry?.hash) map.set(String(entry.hash).toLowerCase(), entry.cached !== false);
+      if (typeof entry === 'string') {
+        map.set(entry.toLowerCase(), true);
+        continue;
+      }
+      const hash = entry?.hash || entry?.info_hash;
+      if (hash) map.set(String(hash).toLowerCase(), true);
     }
-  } else if (data && typeof data === 'object') {
-    for (const [hash, value] of Object.entries(data)) {
-      map.set(hash.toLowerCase(), value === true || value?.cached === true || value?.name != null || Array.isArray(value));
+    return map;
+  }
+
+  if (data && typeof data === 'object') {
+    for (const [responseHash, value] of Object.entries(data)) {
+      const hash = String(value?.hash || value?.info_hash || responseHash).toLowerCase();
+      if (!hash) continue;
+
+      // TorBox only includes cached hashes in the object response. A returned
+      // object/string/array therefore means the hash is cached even when a
+      // dedicated `cached` property is absent.
+      const cached = value !== null && value !== false;
+      if (cached) map.set(hash, true);
     }
   }
+
   return map;
 }
 
@@ -57,15 +72,20 @@ export async function checkCached(hashes) {
     const chunk = unique.slice(offset, offset + 50);
     const url = new URL(`${API}/checkcached`);
     url.searchParams.set('hash', chunk.join(','));
-    url.searchParams.set('format', 'list');
+    url.searchParams.set('format', 'object');
+    url.searchParams.set('list_files', 'false');
+
     try {
       const payload = await json(await fetchWithTimeout(url, { headers: authHeaders() }));
       const mapped = cacheMapFromPayload(payload);
-      for (const hash of chunk) if (mapped.get(hash)) result.set(hash, true);
+      for (const hash of chunk) {
+        if (mapped.get(hash)) result.set(hash, true);
+      }
     } catch (error) {
       console.warn('[torbox] cache check failed:', error.message);
     }
   }
+
   return result;
 }
 
