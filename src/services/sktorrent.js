@@ -66,13 +66,17 @@ function parseSearchHtml(html) {
   return results;
 }
 
-async function fetchSearchPage(query, page) {
+function searchDirection(value) {
+  return String(value || '').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+}
+
+async function fetchSearchPage(query, page, direction = 'DESC') {
   const url = new URL(SEARCH_URL);
   url.searchParams.set('search', query);
   url.searchParams.set('category', '0');
   url.searchParams.set('active', '0');
   url.searchParams.set('order', 'data');
-  url.searchParams.set('by', 'DESC');
+  url.searchParams.set('by', searchDirection(direction));
   url.searchParams.set('page', String(page));
 
   const response = await fetchWithTimeout(url, { headers: headers(), redirect: 'follow' });
@@ -80,13 +84,14 @@ async function fetchSearchPage(query, page) {
   return parseSearchHtml(await response.text());
 }
 
-export async function searchSkTorrent(query, pages) {
+export async function searchSkTorrent(query, pages, { direction = 'DESC' } = {}) {
   const config = getRuntimeConfig();
   if (!skTorrentConfigured(config)) throw new Error('SKTorrent credentials are not configured');
-  const key = `search:${config.sktUid}:${query}:${pages}`;
+  const normalizedDirection = searchDirection(direction);
+  const key = `search:${config.sktUid}:${normalizedDirection}:${query}:${pages}`;
   return cache.remember(key, async () => {
     const pageNumbers = Array.from({ length: pages }, (_, index) => index);
-    const pageResults = await mapPool(pageNumbers, 3, (page) => fetchSearchPage(query, page));
+    const pageResults = await mapPool(pageNumbers, 3, (page) => fetchSearchPage(query, page, normalizedDirection));
     const dedupe = new Map();
     for (const result of pageResults) {
       if (!Array.isArray(result)) continue;
