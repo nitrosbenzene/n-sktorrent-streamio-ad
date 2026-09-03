@@ -20,14 +20,10 @@ function makeQueries(meta, type, season) {
     const normalized = normalize(raw);
     if (!raw || !normalized) continue;
 
-    // Search both the displayed/original spelling and an accent/punctuation-free
-    // spelling. Examples: WALL·E -> "wall e", Balerína -> "balerina".
     queries.add(raw);
     if (normalized !== raw.toLowerCase()) queries.add(normalized);
 
     if (type === 'movie' && meta.year) {
-      // A year-qualified query is most useful for short/generic titles. Keep it
-      // bounded so we do not multiply SKTorrent page requests unnecessarily.
       const tokenCount = normalized.split(' ').length;
       if (normalized.length <= 12 || tokenCount <= 2) queries.add(`${normalized} ${meta.year}`);
     }
@@ -41,16 +37,22 @@ function makeQueries(meta, type, season) {
   return [...queries].slice(0, type === 'movie' ? 8 : 10);
 }
 
+function makeOlderFirstQueries(meta) {
+  const queries = new Set();
+  for (const title of meta.titles.slice(0, 8)) {
+    const normalized = normalize(title);
+    if (normalized.length >= 4) queries.add(normalized);
+    if (queries.size >= 4) break;
+  }
+  return [...queries];
+}
+
 function scoreSearchResult(item, meta) {
   const titleBonus = releaseMatchesTitle(item.name, meta.titles, meta.year) ? 100 : 0;
   return titleBonus + Math.min(Number(item.seeds || 0), 50);
 }
 
-async function searchAll(meta, type, season) {
-  const pages = type === 'series' ? env.seriesSearchPages : env.movieSearchPages;
-  const queries = makeQueries(meta, type, season);
-  const groups = await mapPool(queries, 2, (query) => searchSkTorrent(query, pages));
-  const dedupe = new Map();
+function mergeSearchGroups(dedupe, groups, meta) {
   for (const group of groups) {
     if (!Array.isArray(group)) continue;
     for (const item of group) {
@@ -58,13 +60,45 @@ async function searchAll(meta, type, season) {
       if (!old || scoreSearchResult(item, meta) > scoreSearchResult(old, meta)) dedupe.set(item.id, item);
     }
   }
+}
 
-  const matched = [...dedupe.values()]
+function matchingSearchResults(dedupe, meta) {
+  return [...dedupe.values()]
     .filter((item) => releaseMatchesTitle(item.name, meta.titles, meta.year))
     .sort((a, b) => scoreSearchResult(b, meta) - scoreSearchResult(a, meta))
     .slice(0, env.maxTorrentsToInspect);
+}
 
-  console.log(`[search] ${type} ${meta.imdbId} aliases=${meta.titles.length} queries=${queries.length} found=${dedupe.size} matched=${matched.length}`);
+async function searchAll(meta, type, season) {
+  const pages = type === 'series' ? env.seriesSearchPages : env.movieSearchPages;
+  const queries = makeQueries(meta, type, season);
+  const groups = await mapPool(queries, 2, (query) => searchSkTorrent(query, pages));
+  const dedupe = new Map();
+  mergeSearchGroups(dedupe, groups, meta);
+
+  let matched = matchingSearchResults(dedupe, meta);
+  let olderFirstUsed = false;
+
+  // Reused movie titles can bury the wanted release behind many newer torrents.
+  // Example: Ballerina (2016 / Leap!) is now hidden behind Ballerina (2025).
+  // If the normal newest-first scan yields no year-matching result, scan a few
+  // strong aliases from the oldest end of SKTorrent's search results as well.
+  if (type === 'movie' && meta.year && matched.length === 0) {
+    const olderQueries = makeOlderFirstQueries(meta);
+    if (olderQueries.length) {
+      olderFirstUsed = true;
+      const olderPages = Math.min(Math.max(pages, 4), 8);
+      const olderGroups = await mapPool(
+        olderQueries,
+        2,
+        (query) => searchSkTorrent(query, olderPages, { direction: 'ASC' })
+      );
+      mergeSearchGroups(dedupe, olderGroups, meta);
+      matched = matchingSearchResults(dedupe, meta);
+    }
+  }
+
+  console.log(`[search] ${type} ${meta.imdbId} aliases=${meta.titles.length} queries=${queries.length} olderFirst=${olderFirstUsed} found=${dedupe.size} matched=${matched.length}`);
   return matched;
 }
 
