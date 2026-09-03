@@ -3,11 +3,11 @@ import { mapPool } from '../lib/http.js';
 import {
   chooseVideoFile,
   extractReleaseTraits,
-  formatBytes,
   isWebReadyVideo,
   normalize,
   releaseMatchesTitle
 } from '../domain/media.js';
+import { formatStreamDisplay } from '../domain/stream-display.js';
 import { resolveMetadata } from './metadata.js';
 import { loadTorrentDescriptor, searchSkTorrent } from './sktorrent.js';
 import { attachDirectLinks, checkCached } from './torbox.js';
@@ -140,23 +140,13 @@ function compareCandidates(a, b, cacheMap) {
   return Number(b.searchItem?.seeds || 0) - Number(a.searchItem?.seeds || 0);
 }
 
-function stremioStream(candidate, cached) {
-  const isCached = Boolean(cached);
-  const tags = [candidate.quality, ...candidate.traits.flags, ...candidate.traits.languages].filter(Boolean);
-  const fileSize = formatBytes(candidate.file.length);
-  const torrentSize = formatBytes(candidate.torrent.length);
-  const sourceLabel = isCached ? '⚡ TORBOX CACHED' : 'P2P';
-  const qualityLabel = tags.join(' · ') || 'Torrent';
-
-  const name = isCached
-    ? `⚡ TORBOX · ${qualityLabel}`
-    : `N-SKT · ${qualityLabel} · P2P`;
-
-  const title = [
-    `${sourceLabel} · ${candidate.title}`,
-    `📦 ${fileSize}${torrentSize !== '?' && torrentSize !== fileSize ? ` / ${torrentSize}` : ''}`,
-    candidate.file.path
-  ].join('\n');
+function stremioStream(candidate, cached, context) {
+  const { name, title } = formatStreamDisplay(candidate, {
+    cached: Boolean(cached),
+    type: context.type,
+    season: context.season,
+    episode: context.episode
+  });
 
   if (candidate.directUrl) {
     const filename = String(candidate.file?.path || candidate.file?.name || '').split(/[\\/]/).pop() || undefined;
@@ -211,5 +201,9 @@ export async function buildStreams({ type, imdbId, season, episode }) {
   candidates.sort((a, b) => compareCandidates(a, b, cacheMap));
   candidates = await attachDirectLinks(candidates, cacheMap);
 
-  return candidates.map((candidate) => stremioStream(candidate, cacheMap.get(candidate.infoHash)));
+  return candidates.map((candidate) => stremioStream(candidate, cacheMap.get(candidate.infoHash), {
+    type,
+    season,
+    episode
+  }));
 }
