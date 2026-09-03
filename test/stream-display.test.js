@@ -50,14 +50,25 @@ test('formats cached movie results like the reference SKTorrent addon', () => {
   ].join('\n'));
 });
 
-test('labels non-direct results as P2P and includes episode information', () => {
+test('labels uncached results not downloading through TorBox as TB', () => {
   const result = formatStreamDisplay(candidate({ directUrl: null }), {
     cached: false,
+    downloading: false,
+    type: 'movie'
+  });
+
+  assert.equal(result.name, '[TB] SKT\nFILMY CZ/SK');
+});
+
+test('labels active TorBox downloads with hourglass and includes episode information', () => {
+  const result = formatStreamDisplay(candidate({ directUrl: null }), {
+    cached: false,
+    downloading: true,
     type: 'series',
     season: 2,
     episode: 7
   });
 
-  assert.equal(result.name, '[P2P] SKT\nFILMY CZ/SK');
+  assert.equal(result.name, '[TB ⏳] SKT\nFILMY CZ/SK');
   assert.match(result.title, /📺 Séria 2 • Epizóda 7/);
 });

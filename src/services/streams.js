@@ -10,7 +10,7 @@ import {
 import { formatStreamDisplay } from '../domain/stream-display.js';
 import { resolveMetadata } from './metadata.js';
 import { loadTorrentDescriptor, searchSkTorrent } from './sktorrent.js';
-import { attachDirectLinks, checkCached } from './torbox.js';
+import { attachDirectLinks, checkCached, checkDownloading } from './torbox.js';
 
 function makeQueries(meta, type, season) {
   const queries = new Set();
@@ -140,9 +140,10 @@ function compareCandidates(a, b, cacheMap) {
   return Number(b.searchItem?.seeds || 0) - Number(a.searchItem?.seeds || 0);
 }
 
-function stremioStream(candidate, cached, context) {
+function stremioStream(candidate, cached, downloading, context) {
   const { name, title } = formatStreamDisplay(candidate, {
     cached: Boolean(cached),
+    downloading: Boolean(downloading),
     type: context.type,
     season: context.season,
     episode: context.episode
@@ -197,13 +198,18 @@ export async function buildStreams({ type, imdbId, season, episode }) {
     return true;
   });
 
-  const cacheMap = await checkCached(candidates.map((item) => item.infoHash));
+  const hashes = candidates.map((item) => item.infoHash);
+  const [cacheMap, downloadingMap] = await Promise.all([
+    checkCached(hashes),
+    checkDownloading(hashes)
+  ]);
   candidates.sort((a, b) => compareCandidates(a, b, cacheMap));
   candidates = await attachDirectLinks(candidates, cacheMap);
 
-  return candidates.map((candidate) => stremioStream(candidate, cacheMap.get(candidate.infoHash), {
-    type,
-    season,
-    episode
-  }));
+  return candidates.map((candidate) => stremioStream(
+    candidate,
+    cacheMap.get(candidate.infoHash),
+    downloadingMap.get(candidate.infoHash),
+    { type, season, episode }
+  ));
 }
