@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   chooseVideoFile,
   extractReleaseTraits,
+  normalize,
   parseStremioId,
   releaseMatchesTitle
 } from '../src/domain/media.js';
@@ -14,6 +15,17 @@ test('parses Stremio series id', () => {
 test('matches title aliases but rejects a conflicting year', () => {
   assert.equal(releaseMatchesTitle('Pelisky 1999 1080p CZ', ['Pelíšky'], 1999), true);
   assert.equal(releaseMatchesTitle('Pelisky 2008 1080p CZ', ['Pelíšky'], 1999), false);
+});
+
+test('normalizes Unicode punctuation in stylized titles', () => {
+  assert.equal(normalize('WALL·E'), 'wall e');
+  assert.equal(releaseMatchesTitle('WALL E 2008 1080p CZ', ['WALL·E'], 2008), true);
+  assert.equal(releaseMatchesTitle('WALL-E.2008.2160p.UHD', ['WALL·E'], 2008), true);
+});
+
+test('matches accent-free localized aliases', () => {
+  assert.equal(releaseMatchesTitle('Balerina 2016 1080p CZ', ['Leap!', 'Balerína', 'Ballerina'], 2016), true);
+  assert.equal(releaseMatchesTitle('Ballerina.2016.720p', ['Leap!', 'Balerína', 'Ballerina'], 2016), true);
 });
 
 test('selects explicit episode from a pack', () => {
