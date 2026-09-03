@@ -71,11 +71,6 @@ function qualityRank(quality) {
 }
 
 function compareCandidates(a, b, cacheMap) {
-  // Strict priority order:
-  // 1) TorBox cached
-  // 2) video quality
-  // 3) selected video file size
-  // 4) seed count as a final tiebreaker
   const cachedDiff = Number(Boolean(cacheMap.get(b.infoHash))) - Number(Boolean(cacheMap.get(a.infoHash)));
   if (cachedDiff) return cachedDiff;
 
@@ -89,20 +84,28 @@ function compareCandidates(a, b, cacheMap) {
 }
 
 function stremioStream(candidate, cached) {
+  const isCached = Boolean(cached);
   const tags = [candidate.quality, ...candidate.traits.flags, ...candidate.traits.languages].filter(Boolean);
   const fileSize = formatBytes(candidate.file.length);
   const torrentSize = formatBytes(candidate.torrent.length);
-  const cachedLabel = cached ? '⚡ TorBox cached' : 'P2P';
-  const label = `${tags.join(' · ') || 'Torrent'} · ${cachedLabel}`;
+  const sourceLabel = isCached ? '⚡ TORBOX CACHED' : 'P2P';
+  const qualityLabel = tags.join(' · ') || 'Torrent';
+
+  // Put the cache marker in both `name` and `title`. Different Stremio clients
+  // render/truncate these fields differently, so this keeps TorBox status visible.
+  const name = isCached
+    ? `⚡ TORBOX · ${qualityLabel}`
+    : `N-SKT · ${qualityLabel} · P2P`;
+
   const title = [
-    candidate.title,
+    `${sourceLabel} · ${candidate.title}`,
     `📦 ${fileSize}${torrentSize !== '?' && torrentSize !== fileSize ? ` / ${torrentSize}` : ''}`,
     candidate.file.path
   ].join('\n');
 
   if (candidate.directUrl) {
     return {
-      name: `N-SKT · ${label}`,
+      name,
       title,
       url: candidate.directUrl,
       behaviorHints: {
@@ -113,7 +116,7 @@ function stremioStream(candidate, cached) {
   }
 
   return {
-    name: `N-SKT · ${label}`,
+    name,
     title,
     infoHash: candidate.infoHash,
     fileIdx: candidate.file.index,
