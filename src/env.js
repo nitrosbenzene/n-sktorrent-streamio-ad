@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 function int(name, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
   const raw = process.env[name];
   if (raw == null || raw === '') return fallback;
@@ -16,6 +18,7 @@ export const env = Object.freeze({
   addonName: process.env.ADDON_NAME || 'n-sktorrent-streamio-ad',
   addonId: process.env.ADDON_ID || 'com.n.sktorrent.streamio.ad',
   port: int('PORT', 7000, 1, 65535),
+  configSecret: process.env.CONFIG_SECRET || '',
   sktUid: process.env.SKT_UID || '',
   sktPass: process.env.SKT_PASS || '',
   torboxKey: process.env.TORBOX_API_KEY || '',
@@ -30,6 +33,30 @@ export const env = Object.freeze({
   torboxMaxDirectLinks: int('TORBOX_MAX_DIRECT_LINKS', 5, 0, 20)
 });
 
-export function skTorrentConfigured() {
-  return Boolean(env.sktUid && env.sktPass);
+const runtimeStorage = new AsyncLocalStorage();
+
+function environmentConfig() {
+  return {
+    sktUid: env.sktUid,
+    sktPass: env.sktPass,
+    torboxKey: env.torboxKey,
+    tmdbKey: env.tmdbKey
+  };
+}
+
+export function getRuntimeConfig() {
+  return runtimeStorage.getStore() || environmentConfig();
+}
+
+export function withRuntimeConfig(config, callback) {
+  const base = environmentConfig();
+  const merged = {
+    ...base,
+    ...(config || {})
+  };
+  return runtimeStorage.run(merged, callback);
+}
+
+export function skTorrentConfigured(config = getRuntimeConfig()) {
+  return Boolean(config?.sktUid && config?.sktPass);
 }
