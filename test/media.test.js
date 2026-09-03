@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   chooseVideoFile,
   extractReleaseTraits,
+  isWebReadyVideo,
   normalize,
   parseStremioId,
   releaseMatchesTitle
@@ -44,4 +45,11 @@ test('extracts release traits', () => {
   assert.ok(traits.flags.includes('HDR'));
   assert.ok(traits.languages.includes('🇨🇿'));
   assert.ok(traits.languages.includes('🇸🇰'));
+});
+
+test('only MP4 files are web-ready direct streams', () => {
+  assert.equal(isWebReadyVideo('Movie.1080p.mp4'), true);
+  assert.equal(isWebReadyVideo('folder\\Movie.1080p.MP4'), true);
+  assert.equal(isWebReadyVideo('Movie.1080p.mkv'), false);
+  assert.equal(isWebReadyVideo('Movie.1080p.avi'), false);
 });
