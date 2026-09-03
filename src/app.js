@@ -17,7 +17,7 @@ app.use((req, res, next) => {
 
 const manifestCore = Object.freeze({
   id: env.addonId,
-  version: '1.2.0',
+  version: '1.2.1',
   name: env.addonName,
   description: 'Personal SKTorrent stream addon with Czech/Slovak metadata matching and optional TorBox acceleration.',
   resources: ['stream'],
@@ -43,7 +43,19 @@ const configuredManifest = Object.freeze({
   }
 });
 
+function normalizeOrigin(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+
 function publicOrigin(req) {
+  const configured = normalizeOrigin(process.env.PUBLIC_URL);
+  if (configured) return configured;
+
+  const vercelProduction = normalizeOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL);
+  if (vercelProduction) return vercelProduction;
+
   const host = String(req.get('host') || '').trim();
   let protocol = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
   if (/\.vercel\.app(?::\d+)?$/i.test(host)) protocol = 'https';
