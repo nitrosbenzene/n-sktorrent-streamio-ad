@@ -23,10 +23,15 @@ function parseSize(text) {
   return match ? `${match[1].replace(',', '.')} ${match[2].toUpperCase()}` : '?';
 }
 
-function parseSeeds(text) {
-  const patterns = [/(?:seed(?:ers?)?|seeds?)\s*[:\-]?\s*(\d+)/i, /S\s*[:\-]\s*(\d+)/i];
+export function parseSeeds(text) {
+  const normalized = String(text).replace(/\s+/g, ' ');
+  const patterns = [
+    /Odosielaj[uú]\s*:\s*(\d+)/i,
+    /(?:seed(?:ers?)?|seeds?)\s*[:\-]?\s*(\d+)/i,
+    /\bS\s*[:\-]\s*(\d+)/i
+  ];
   for (const pattern of patterns) {
-    const match = String(text).match(pattern);
+    const match = normalized.match(pattern);
     if (match) return Number(match[1]);
   }
   return 0;
