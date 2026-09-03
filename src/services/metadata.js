@@ -1,4 +1,4 @@
-import { env } from '../env.js';
+import { getRuntimeConfig } from '../env.js';
 import { TtlCache } from '../lib/cache.js';
 import { getJson } from '../lib/http.js';
 
@@ -18,9 +18,10 @@ async function getCinemeta(type, imdbId) {
 }
 
 async function getTmdbFind(imdbId, language) {
-  if (!env.tmdbKey) return null;
+  const { tmdbKey } = getRuntimeConfig();
+  if (!tmdbKey) return null;
   const url = new URL(`https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}`);
-  url.searchParams.set('api_key', env.tmdbKey);
+  url.searchParams.set('api_key', tmdbKey);
   url.searchParams.set('external_source', 'imdb_id');
   url.searchParams.set('language', language);
   try {
@@ -36,7 +37,8 @@ function tmdbRecord(data, type) {
 }
 
 export async function resolveMetadata(type, imdbId) {
-  return cache.remember(`${type}:${imdbId}`, async () => {
+  const { tmdbKey } = getRuntimeConfig();
+  return cache.remember(`${tmdbKey ? 'tmdb' : 'cinemeta'}:${type}:${imdbId}`, async () => {
     const [cinemeta, tmdbCs, tmdbSk, tmdbEn] = await Promise.all([
       getCinemeta(type, imdbId),
       getTmdbFind(imdbId, 'cs-CZ'),
