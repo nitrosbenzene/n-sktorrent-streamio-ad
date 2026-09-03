@@ -4,6 +4,7 @@ import {
   chooseVideoFile,
   extractReleaseTraits,
   formatBytes,
+  isWebReadyVideo,
   normalize,
   releaseMatchesTitle
 } from '../domain/media.js';
@@ -158,13 +159,18 @@ function stremioStream(candidate, cached) {
   ].join('\n');
 
   if (candidate.directUrl) {
+    const filename = String(candidate.file?.path || candidate.file?.name || '').split(/[\\/]/).pop() || undefined;
+    const videoSize = Number(candidate.file?.length || 0);
+
     return {
       name,
       title,
       url: candidate.directUrl,
       behaviorHints: {
         bingeGroup: `n-skt-${candidate.quality.toLowerCase().replace(/\W+/g, '-')}`,
-        notWebReady: false
+        notWebReady: !isWebReadyVideo(filename),
+        ...(filename ? { filename } : {}),
+        ...(Number.isFinite(videoSize) && videoSize > 0 ? { videoSize } : {})
       }
     };
   }
